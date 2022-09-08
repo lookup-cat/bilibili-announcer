@@ -4,11 +4,10 @@ import importlib
 import json
 import logging
 import platform
-import sys
 from asyncio import QueueEmpty
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from io import TextIOWrapper, BytesIO
+from enum import Enum
 from threading import Thread
 from typing import Union, Coroutine, Generator, Any, Optional, List
 
@@ -23,14 +22,14 @@ from flet import Page, Row, icons, Column, Dropdown, dropdown, Container, Text, 
     ListView, padding, border, border_radius, Ref, ProgressRing, TextField
 
 # noinspection SpellCheckingInspection
-from typing.io import TextIO
-
 winsound = None
 if platform.system() == 'Windows':
     # noinspection SpellCheckingInspection
     winsound = importlib.import_module('winsound')
 
 logger = logging.getLogger('main')
+logger.setLevel(logging.INFO)
+
 
 @dataclass_json
 @dataclass
@@ -39,6 +38,12 @@ class Config:
     sound: str = ''  # 音源
     play_queue_limit: int = 5  # 弹幕播报队列数量限制
     play_interval: float = 1  # 弹幕播报间隔 单位秒
+
+
+class PlayStatus(Enum):
+    stop = 0  # 停止播报
+    operation = 1  # 正在连接或者断开直播间
+    playing = 2  # 已连接直播间正在播报弹幕
 
 
 class UILoggerHandler(logging.StreamHandler):
@@ -58,7 +63,6 @@ class Controller(Thread):
     def __init__(self):
         super().__init__()
         self.config: Optional[Config] = None
-        self.is_playing = False
         self.room: Optional[LiveDanmaku] = None
         self.__previous_config__: Optional[Config] = None
         self.loop = asyncio.new_event_loop()
@@ -68,6 +72,7 @@ class Controller(Thread):
         self.log_ref = Ref[ListView]()
         self.play_button_ref = Ref[ElevatedButton]()
         self.play_queue: Optional[asyncio.Queue] = None
+        self.play_status = PlayStatus.stop
 
     def run(self) -> None:
         asyncio.set_event_loop(self.loop)
@@ -77,6 +82,7 @@ class Controller(Thread):
         # 播放器任务
         self.run_async(self.start_player())
         # 日志输出
+        logging.root.handlers = []
         logging.root.addHandler(UILoggerHandler(self.log_control, max_line=1000))
         self.loop.run_forever()
 
@@ -98,6 +104,39 @@ class Controller(Thread):
     @property
     def play_control(self) -> ElevatedButton:
         return self.play_button_ref.current
+
+    def set_play_status(self, play_status: PlayStatus):
+        # 修改当前播报状态
+        self.play_status = play_status
+        button = self.play_control
+        room = self.room_control
+        if play_status == PlayStatus.playing:
+            room.read_only = True
+            room.disabled = True
+            room.update()
+            button.disabled = False
+            button.content = None
+            button.text = '暂停'
+            button.icon = icons.PAUSE
+            button.update()
+        elif play_status == PlayStatus.operation:
+            room.read_only = True
+            room.disabled = True
+            room.update()
+            button.disabled = True
+            button.text = None
+            button.icon = None
+            button.content = ProgressRing(width=12, height=12, stroke_width=2)
+            button.update()
+        elif play_status == PlayStatus.stop:
+            room.disabled = False
+            room.read_only = False
+            room.update()
+            button.disabled = False
+            button.content = None
+            button.text = '启动'
+            button.icon = icons.PLAY_ARROW
+            button.update()
 
     async def read_config(self):
         """
@@ -198,15 +237,19 @@ class Controller(Thread):
         :param room_id:
         :return:
         """
-        if self.room:
-            await self.wait_room_complete()
-        self.room = LiveDanmaku(room_id)
+        room = LiveDanmaku(room_id)
+        self.room = room
+
+        @room.on('VERIFICATION_SUCCESSFUL')
+        async def on_verification_successful(event):
+            self.set_play_status(play_status=PlayStatus.playing)
 
         # noinspection SpellCheckingInspection
-        @self.room.on('DANMU_MSG')
+        @room.on('DANMU_MSG')
         async def on_danmaku(event):
             text = event['data']['info'][1]
             logger.info(f'收到弹幕: {text}')
+            # 新增弹幕过滤机制
             if len(set(text)) == 1:
                 return
             if '哈哈' in text:
@@ -217,24 +260,13 @@ class Controller(Thread):
 
         # TODO 处理房号错误、重连问题
         try:
-            await self.room.connect()
+            await room.connect()
         except ResponseCodeException as e:
             logger.error(e.msg)
+        finally:
+            self.set_play_status(PlayStatus.stop)
 
-    async def wait_room_complete(self):
-        """
-        等待直播间连接或者断连完毕
-        :return:
-        """
-        while True:
-            if not self.room \
-                    or self.room.get_status() == self.room.STATUS_ESTABLISHED \
-                    or self.room.get_status() == self.room.STATUS_ERROR \
-                    or self.room.get_status() == self.room.STATUS_CLOSED:
-                break
-            await asyncio.sleep(0.2)
-
-    async def pause(self):
+    async def stop(self):
         """
         停止播放，清空播放队列
         :return:
@@ -252,7 +284,6 @@ class Controller(Thread):
         断开直播间连接
         :return:
         """
-        await self.wait_room_complete()
         await self.room.disconnect()
 
     def room_changed(self, _):
@@ -283,43 +314,24 @@ class Controller(Thread):
         self.run_async(self.do_play_click(room_id))
 
     async def do_play_click(self, room_id: int):
-        button = self.play_control
-        button.disabled = True
-        button.text = None
-        button.icon = None
-        button.content = ProgressRing(width=12, height=12, stroke_width=2)
-        button.update()
-
-        self.is_playing = not self.is_playing
-        if self.is_playing:
-            self.room_control.read_only = True
-            self.room_control.disabled = True
-            self.room_control.update()
+        status = self.play_status
+        if status == PlayStatus.stop:
+            # 启动播放
+            self.set_play_status(PlayStatus.operation)
             self.loop.create_task(self.connect(room_id))
-            # 每次点击播放 保存配置文件
+            # 保存配置
             self.config.room_id = room_id
-            self.loop.create_task(self.write_config())
-        else:
-            self.loop.create_task(self.disconnect())
-
-        # 等待直播间连接或断连完毕后, 更新button的ui
-        await asyncio.wait([
-            asyncio.sleep(0.8),  # 让动画至少持续800ms
-            self.wait_room_complete(),
-        ])
-        button.disabled = False
-        button.content = None
-        if self.is_playing:
-            button.text = '暂停'
-            button.icon = icons.PAUSE
-            button.update()
-        else:
-            button.text = '启动'
-            button.icon = icons.PLAY_ARROW
-            button.update()
-            self.room_control.disabled = False
-            self.room_control.read_only = False
-            self.room_control.update()
+            await self.write_config()
+        elif status == PlayStatus.playing:
+            self.set_play_status(PlayStatus.operation)
+            # 暂停播放
+            await self.loop.create_task(
+                asyncio.wait([
+                    self.stop(),
+                    asyncio.sleep(0.8)
+                ])
+            )
+            await self.disconnect()
 
 
 def main(page: Page):
@@ -383,7 +395,7 @@ def main(page: Page):
                 padding=padding.all(8),
                 border_radius=border_radius.all(5),
                 border=border.all(2, '#CCCCCC'),
-                bgcolor='#EEEEEE',
+                # bgcolor='#EEEEEE',
                 content=ListView(
                     ref=controller.log_ref,
                     auto_scroll=True,
