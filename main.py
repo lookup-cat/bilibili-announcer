@@ -1,8 +1,11 @@
+import _locale
 import asyncio
 import dataclasses
-import importlib
 import json
 import logging
+import os
+
+import winsound
 import platform
 from asyncio import QueueEmpty
 from concurrent.futures import ThreadPoolExecutor
@@ -19,13 +22,11 @@ from bilibili_api import ResponseCodeException
 from bilibili_api.live import LiveDanmaku
 from dataclasses_json import dataclass_json
 from flet import Page, Row, icons, Column, Dropdown, dropdown, Container, Text, ElevatedButton, \
-    ListView, padding, border, border_radius, Ref, ProgressRing, TextField
+    ListView, padding, border, border_radius, Ref, ProgressRing, TextField, Theme
+from playsound import playsound
 
-# noinspection SpellCheckingInspection
-winsound = None
-if platform.system() == 'Windows':
-    # noinspection SpellCheckingInspection
-    winsound = importlib.import_module('winsound')
+_locale._getdefaultlocale = (lambda *args: ['zh_CN', 'utf8'])
+is_windows = platform.system() == 'Windows'
 
 logger = logging.getLogger('main')
 logger.setLevel(logging.INFO)
@@ -82,7 +83,7 @@ class Controller(Thread):
         # 播放器任务
         self.run_async(self.start_player())
         # 日志输出
-        logging.root.handlers = []
+        # logging.root.handlers = []
         logging.root.addHandler(UILoggerHandler(self.log_control, max_line=1000))
         self.loop.run_forever()
 
@@ -143,12 +144,12 @@ class Controller(Thread):
         读取音源配置、应用配置
         :return:
         """
-        # 都市圈
+        # 读取音源
         await self.read_sounds()
         if not await async_os.path.exists('config.json'):
             self.config = Config()
         else:
-            async with aiofiles.open('config.json') as file:
+            async with aiofiles.open(os.getcwd() + '/config.json') as file:
                 content = await file.read()
             try:
                 self.config = Config.from_json(content)
@@ -190,19 +191,28 @@ class Controller(Thread):
                 self.log_control.update()
                 # noinspection HttpUrlsUsage
                 url = f"http://233366.proxy.nscc-gz.cn:8888?speaker={self.sound_control.value}&text={text}"
+                is_fail = False
                 try:
                     response = await client.get(url)
                     if response.status_code == 200:
                         mp3 = response.content
-                        if platform.system() == 'Windows':
-                            await self.loop.run_in_executor(executor, winsound.PlaySound, mp3)
+                        if await async_os.path.exists('tmp.mp3'):
+                            await async_os.remove('tmp.mp3')
+                        async with aiofiles.open('tmp.mp3', 'wb') as file:
+                            await file.write(mp3)
+                        await self.loop.run_in_executor(executor, playsound, os.getcwd() + '/tmp.mp3')
+                        await async_os.remove('tmp.mp3')
                     else:
                         # 下载音频失败
+                        is_fail = True
                         pass
                 except Exception:
                     # 下载音频失败
+                    is_fail = True
                     pass
                 finally:
+                    if is_fail:
+                        logger.info(f'播放 [{self.sound_control.value}] {text} 失败')
                     await asyncio.sleep(self.config.play_interval)
 
     async def add_play_task(self, text: str):
@@ -224,6 +234,7 @@ class Controller(Thread):
         """
         async with aiofiles.open('sounds.json') as file:
             content = await file.read()
+        print(f'sounds: {content}')
         sounds = json.loads(content)
         sound_control = self.sound_ref.current
         self.sounds = sounds
@@ -249,7 +260,7 @@ class Controller(Thread):
         async def on_danmaku(event):
             text = event['data']['info'][1]
             logger.info(f'收到弹幕: {text}')
-            # 新增弹幕过滤机制
+            # TODO 新增弹幕过滤机制
             if len(set(text)) == 1:
                 return
             if '哈哈' in text:
@@ -276,7 +287,7 @@ class Controller(Thread):
                 self.play_queue.get_nowait()
             except QueueEmpty:
                 break
-        if platform.system() == 'Windows':
+        if is_windows:
             winsound.PlaySound(None, winsound.SND_PURGE)
 
     async def disconnect(self):
@@ -339,6 +350,8 @@ def main(page: Page):
     page.window_width = 400
     page.window_height = 650
     page.window_resizable = False
+    if is_windows:
+        page.theme = Theme(font_family='微软雅黑')
 
     page.title = "派蒙弹幕播报"
     page.vertical_alignment = "center"
@@ -361,7 +374,6 @@ def main(page: Page):
                         width=right_column_width,
                         ref=controller.room_ref,
                         hint_text='请输入直播间房号',
-                        value='697',
                         on_change=controller.room_changed,
                     )
                 ]
