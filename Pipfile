@@ -9,6 +9,7 @@ pyinstaller = "*"
 bilibili-api-python = "*"
 aiofiles = "*"
 dataclasses-json = "*"
+playsound = "*"
 
 [dev-packages]
 

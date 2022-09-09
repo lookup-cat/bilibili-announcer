@@ -5,8 +5,8 @@ import json
 import logging
 import os
 
-import winsound
 import platform
+import re
 from asyncio import QueueEmpty
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -28,9 +28,6 @@ from playsound import playsound
 _locale._getdefaultlocale = (lambda *args: ['zh_CN', 'utf8'])
 is_windows = platform.system() == 'Windows'
 
-logger = logging.getLogger('main')
-logger.setLevel(logging.INFO)
-
 
 @dataclass_json
 @dataclass
@@ -39,24 +36,13 @@ class Config:
     sound: str = ''  # 音源
     play_queue_limit: int = 5  # 弹幕播报队列数量限制
     play_interval: float = 1  # 弹幕播报间隔 单位秒
+    log_max_lines: int = 1000  # 日志最大行数
 
 
 class PlayStatus(Enum):
     stop = 0  # 停止播报
     operation = 1  # 正在连接或者断开直播间
     playing = 2  # 已连接直播间正在播报弹幕
-
-
-class UILoggerHandler(logging.StreamHandler):
-    def __init__(self, control: ListView, max_line: int = 1000):
-        super().__init__()
-        self.control = control
-        self.max_line = max_line
-
-    def emit(self, record: logging.LogRecord) -> None:
-        msg = self.format(record)
-        self.control.controls.append(Text(msg))
-        self.control.update()
 
 
 # noinspection PyBroadException
@@ -74,6 +60,15 @@ class Controller(Thread):
         self.play_button_ref = Ref[ElevatedButton]()
         self.play_queue: Optional[asyncio.Queue] = None
         self.play_status = PlayStatus.stop
+        self.logger = logging.getLogger('main')
+        self.log_count = 0
+
+    def log(self, msg: str):
+        self.logger.info(msg)
+        while len(self.log_control.controls) >= self.config.log_max_lines:
+            self.log_control.controls.remove(self.log_control.controls[0])
+        self.log_control.controls.append(Text(msg))
+        self.log_control.update()
 
     def run(self) -> None:
         asyncio.set_event_loop(self.loop)
@@ -83,8 +78,6 @@ class Controller(Thread):
         # 播放器任务
         self.run_async(self.start_player())
         # 日志输出
-        # logging.root.handlers = []
-        logging.root.addHandler(UILoggerHandler(self.log_control, max_line=1000))
         self.loop.run_forever()
 
     def run_async(self, func: Union[Coroutine, Generator[Any, None, Any]]):
@@ -107,7 +100,11 @@ class Controller(Thread):
         return self.play_button_ref.current
 
     def set_play_status(self, play_status: PlayStatus):
-        # 修改当前播报状态
+        """
+        修改当前播报状态
+        :param play_status:
+        :return:
+        """
         self.play_status = play_status
         button = self.play_control
         room = self.room_control
@@ -149,10 +146,10 @@ class Controller(Thread):
         if not await async_os.path.exists('config.json'):
             self.config = Config()
         else:
-            async with aiofiles.open(os.getcwd() + '/config.json') as file:
+            async with aiofiles.open('config.json') as file:
                 content = await file.read()
             try:
-                self.config = Config.from_json(content)
+                self.config = Config.from_json(content, infer_missing=True)
             except Exception:
                 self.config = Config()
 
@@ -184,11 +181,11 @@ class Controller(Thread):
         :return:
         """
         executor = ThreadPoolExecutor(1)
+        mp3_file = 'tmp.mp3'
         async with httpx.AsyncClient() as client:
             while True:
                 text: str = await self.play_queue.get()
-                self.log_control.controls.append(Text(f'播放: [{self.sound_control.value}] {text}'))
-                self.log_control.update()
+                self.log(f'播放: [{self.sound_control.value}] {text}')
                 # noinspection HttpUrlsUsage
                 url = f"http://233366.proxy.nscc-gz.cn:8888?speaker={self.sound_control.value}&text={text}"
                 is_fail = False
@@ -196,12 +193,12 @@ class Controller(Thread):
                     response = await client.get(url)
                     if response.status_code == 200:
                         mp3 = response.content
-                        if await async_os.path.exists('tmp.mp3'):
-                            await async_os.remove('tmp.mp3')
-                        async with aiofiles.open('tmp.mp3', 'wb') as file:
+                        if await async_os.path.exists(mp3_file):
+                            await async_os.remove(mp3_file)
+                        async with aiofiles.open(mp3_file, 'wb') as file:
                             await file.write(mp3)
                         await self.loop.run_in_executor(executor, playsound, os.getcwd() + '/tmp.mp3')
-                        await async_os.remove('tmp.mp3')
+                        await async_os.remove(mp3_file)
                     else:
                         # 下载音频失败
                         is_fail = True
@@ -212,7 +209,7 @@ class Controller(Thread):
                     pass
                 finally:
                     if is_fail:
-                        logger.info(f'播放 [{self.sound_control.value}] {text} 失败')
+                        self.log(f'播放 [{self.sound_control.value}] {text} 失败')
                     await asyncio.sleep(self.config.play_interval)
 
     async def add_play_task(self, text: str):
@@ -223,7 +220,11 @@ class Controller(Thread):
         """
         # 删除多余弹幕
         while self.play_queue.qsize() >= self.config.play_queue_limit:
-            await self.play_queue.get()
+            try:
+                text = self.play_queue.get_nowait()
+                self.log(f'丢弃弹幕: {text}')
+            except QueueEmpty:
+                pass
         await self.play_queue.put(text)
         await asyncio.sleep(self.config.play_interval)
 
@@ -248,38 +249,42 @@ class Controller(Thread):
         :param room_id:
         :return:
         """
+        self.log(f'开始连接直播间')
         room = LiveDanmaku(room_id)
         self.room = room
 
         @room.on('VERIFICATION_SUCCESSFUL')
         async def on_verification_successful(event):
+            self.log('连接直播间成功')
             self.set_play_status(play_status=PlayStatus.playing)
 
         # noinspection SpellCheckingInspection
         @room.on('DANMU_MSG')
         async def on_danmaku(event):
             text = event['data']['info'][1]
-            logger.info(f'收到弹幕: {text}')
-            # TODO 新增弹幕过滤机制
-            if len(set(text)) == 1:
+            # TODO 优化弹幕过滤机制
+            # 必须包含中文 或 只有一种字符
+            if not re.match('[\w\W]*[\u4e00-\u9fa5]+[\w\W]*', text) \
+                    or len(set(text)) == 1:
+                self.log(f'过滤弹幕: {text}')
                 return
-            if '哈哈' in text:
-                return
-            self.log_control.controls.append(Text(f'弹幕: {text}'))
-            self.log_control.update()
             await self.add_play_task(text)
 
-        # TODO 处理房号错误、重连问题
         try:
             await room.connect()
         except ResponseCodeException as e:
-            logger.error(e.msg)
+            self.log(e.msg)
+        except Exception:
+            # TODO 新增自动重连
+            self.log('连接异常')
         finally:
+            # TODO 新增立即停止声音播放
             self.set_play_status(PlayStatus.stop)
+            self.log('断开直播间连接')
 
-    async def stop(self):
+    async def disconnect(self):
         """
-        停止播放，清空播放队列
+        停止播放
         :return:
         """
         while not self.play_queue.empty():
@@ -287,14 +292,6 @@ class Controller(Thread):
                 self.play_queue.get_nowait()
             except QueueEmpty:
                 break
-        if is_windows:
-            winsound.PlaySound(None, winsound.SND_PURGE)
-
-    async def disconnect(self):
-        """
-        断开直播间连接
-        :return:
-        """
         await self.room.disconnect()
 
     def room_changed(self, _):
@@ -334,14 +331,8 @@ class Controller(Thread):
             self.config.room_id = room_id
             await self.write_config()
         elif status == PlayStatus.playing:
+            # 停止播放
             self.set_play_status(PlayStatus.operation)
-            # 暂停播放
-            await self.loop.create_task(
-                asyncio.wait([
-                    self.stop(),
-                    asyncio.sleep(0.8)
-                ])
-            )
             await self.disconnect()
 
 
@@ -375,9 +366,11 @@ def main(page: Page):
                         ref=controller.room_ref,
                         hint_text='请输入直播间房号',
                         on_change=controller.room_changed,
+                        content_padding=padding.only(left=12, right=12)
                     )
                 ]
             ),
+            Container(padding=padding.only(top=2)),
             Row(
                 width=left_column_width + right_column_width,
                 vertical_alignment='center',
@@ -391,7 +384,8 @@ def main(page: Page):
                         ref=controller.sound_ref,
                         width=right_column_width,
                         autofocus=True,
-                        on_change=controller.sound_changed
+                        on_change=controller.sound_changed,
+                        content_padding=padding.only(left=12, right=12)
                     )
                 ]
             ),
