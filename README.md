@@ -27,3 +27,4 @@
 
 - [vits](https://github.com/w4123/vits)  原神角色音源
 - [flex](https://github.com/westes/flex)  ui库
+- [bilibili-api-python](https://github.com/Nemo2011/bilibili-api)
