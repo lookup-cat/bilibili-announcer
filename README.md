@@ -1,12 +1,14 @@
 # 派蒙弹幕播报
 
-使用原神角色合成音自动播报b站直播间弹幕
+使用原神角色合成音自动播报b站直播间弹幕.
 
 
 ![image](https://user-images.githubusercontent.com/45026715/189346046-0eff2c51-23c5-41b4-8d4a-9292aee61a7d.png)
 
 ![image](https://user-images.githubusercontent.com/45026715/189348125-f35c67a0-8785-4367-b35d-63578817411b.png)
 
+
+本项目仅用于学习交流, 禁止商业用途, 侵权请联系删除!
 
 ## 使用方式
 
