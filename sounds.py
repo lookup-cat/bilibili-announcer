@@ -1,4 +1,6 @@
-[
+from typing import List
+
+sound_sources: List[str] = [
     "派蒙",
     "凯亚",
     "安柏",

@@ -24,6 +24,7 @@ from dataclasses_json import dataclass_json
 from flet import Page, Row, icons, Column, Dropdown, dropdown, Container, Text, ElevatedButton, \
     ListView, padding, border, border_radius, Ref, ProgressRing, TextField, Theme
 from playsound import playsound
+from sounds import sound_sources
 
 _locale._getdefaultlocale = (lambda *args: ['zh_CN', 'utf8'])
 is_windows = platform.system() == 'Windows'
@@ -53,7 +54,6 @@ class Controller(Thread):
         self.room: Optional[LiveDanmaku] = None
         self.__previous_config__: Optional[Config] = None
         self.loop = asyncio.new_event_loop()
-        self.sounds: List[str] = []
         self.room_ref = Ref[TextField]()
         self.sound_ref = Ref[Dropdown]()
         self.log_ref = Ref[ListView]()
@@ -138,11 +138,9 @@ class Controller(Thread):
 
     async def read_config(self):
         """
-        读取音源配置、应用配置
+        读取应用配置
         :return:
         """
-        # 读取音源
-        await self.read_sounds()
         if not await async_os.path.exists('config.json'):
             self.config = Config()
         else:
@@ -153,8 +151,8 @@ class Controller(Thread):
             except Exception:
                 self.config = Config()
 
-        if self.config.sound not in self.sounds:
-            self.config.sound = self.sounds[0]
+        if self.config.sound not in sound_sources:
+            self.config.sound = sound_sources[0]
 
         # 更新ui
         # 房间号
@@ -227,21 +225,6 @@ class Controller(Thread):
                 pass
         await self.play_queue.put(text)
         await asyncio.sleep(self.config.play_interval)
-
-    async def read_sounds(self):
-        """
-        读取音频列表
-        :return:
-        """
-        async with aiofiles.open('sounds.json') as file:
-            content = await file.read()
-        print(f'sounds: {content}')
-        sounds = json.loads(content)
-        sound_control = self.sound_ref.current
-        self.sounds = sounds
-        options = [dropdown.Option(sound) for sound in sounds]
-        sound_control.options = options
-        sound_control.update()
 
     async def connect(self, room_id: int):
         """
@@ -385,7 +368,8 @@ def main(page: Page):
                         width=right_column_width,
                         autofocus=True,
                         on_change=controller.sound_changed,
-                        content_padding=padding.only(left=12, right=12)
+                        content_padding=padding.only(left=12, right=12),
+                        options=[dropdown.Option(sound_source) for sound_source in sound_sources]
                     )
                 ]
             ),
