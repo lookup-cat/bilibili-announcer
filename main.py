@@ -327,7 +327,7 @@ def main(page: Page):
     if is_windows:
         page.theme = Theme(font_family='微软雅黑')
 
-    page.title = "派蒙弹幕播报"
+    page.title = "派蒙弹幕姬"
     page.vertical_alignment = "center"
 
     left_column_width = page.window_width * 0.2
