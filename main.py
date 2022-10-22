@@ -4,6 +4,7 @@ import dataclasses
 import json
 import logging
 import os
+import azure.cognitiveservices.speech as speechsdk
 
 import platform
 import re
@@ -23,15 +24,18 @@ from bilibili_api.live import LiveDanmaku
 from dataclasses_json import dataclass_json
 from flet import Page, Row, icons, Column, Dropdown, dropdown, Container, Text, ElevatedButton, \
     ListView, padding, border, border_radius, Ref, ProgressRing, TextField, Theme
-from playsound import playsound
-from sounds import sound_sources
+# from playsound import playsound
+# from sounds import sound_sources
 
 _locale._getdefaultlocale = (lambda *args: ['zh_CN', 'utf8'])
 is_windows = platform.system() == 'Windows'
 
-application_name = '派蒙弹幕姬'
-application_version = '1.1'
+application_name = 'AI弹幕姬'
+application_version = '1.2'
 
+speech_key = os.environ.get('SPEECH_KEY', '')
+region = os.environ.get('SPEECH_REGION', '')
+speech_language = 'zh-CN'
 
 @dataclass_json
 @dataclass
@@ -65,6 +69,14 @@ class Controller(Thread):
         self.play_status = PlayStatus.stop
         self.logger = logging.getLogger('main')
         self.log_count = 0
+        self.speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=region)
+        self.audio_config = speechsdk.audio.AudioOutputConfig(use_default_speaker=True)
+        self.speech_synthesizer = speechsdk.SpeechSynthesizer(
+                                    speech_config=self.speech_config, 
+                                    audio_config=self.audio_config
+                                )
+        # voice_local_name -> voice_name
+        self.voices = {}
 
     def log(self, msg: str):
         self.logger.info(msg)
@@ -80,8 +92,22 @@ class Controller(Thread):
         self.run_async(self.read_config())
         # 播放器任务
         self.run_async(self.start_player())
-        # 日志输出
         self.loop.run_forever()
+
+    def fetch_voices(self):
+        self.log('获取音源列表')
+        result = self.speech_synthesizer.get_voices_async(speech_language).get() 
+        if result.reason == speechsdk.ResultReason.VoicesListRetrieved: 
+            self.log(f'获取音源列表成功')
+            for voice in result.voices:
+                self.voices[voice.local_name] = voice.name
+            options = [dropdown.Option(voice.local_name) for voice in result.voices]
+            self.sound_control.options = options
+            self.sound_control.value = result.voices[0].local_name
+            self.sound_control.update()
+            self.sound_changed(None)
+        else:
+            self.log(f'获取音源列表失败: {result.reason}')
 
     def run_async(self, func: Union[Coroutine, Generator[Any, None, Any]]):
         asyncio.run_coroutine_threadsafe(func, self.loop)
@@ -154,16 +180,19 @@ class Controller(Thread):
             except Exception:
                 self.config = Config()
 
-        if self.config.sound not in sound_sources:
-            self.config.sound = sound_sources[0]
+        # if self.config.sound not in sound_sources:
+            # self.config.sound = sound_sources[0]
 
         # 更新ui
         # 房间号
         self.room_control.value = str(self.config.room_id)
         self.room_control.update()
         # 音源
-        self.sound_control.value = self.config.sound
-        self.sound_control.update()
+        # self.sound_control.value = self.config.sound
+        # self.sound_control.update()
+
+        # 读取声音列表
+        self.fetch_voices()
 
     async def write_config(self):
         """
@@ -187,31 +216,40 @@ class Controller(Thread):
             while True:
                 text: str = await self.play_queue.get()
                 self.log(f'播放: [{self.sound_control.value}] {text}')
+                speech_synthesis_result = self.speech_synthesizer.speak_text_async(text).get()
+                if speech_synthesis_result.reason == speechsdk.ResultReason.Canceled:
+                    cancellation_details = speech_synthesis_result.cancellation_details
+                    if cancellation_details.reason == speechsdk.CancellationReason.Error:
+                        if cancellation_details.error_details:
+                            print("播放失败: {}".format(cancellation_details.error_details))
+
+                await asyncio.sleep(self.config.play_interval)
                 # noinspection HttpUrlsUsage
-                url = f"http://233366.proxy.nscc-gz.cn:8888?speaker={self.sound_control.value}&text={text}"
-                is_fail = False
-                try:
-                    response = await client.get(url)
-                    if response.status_code == 200:
-                        mp3 = response.content
-                        if await async_os.path.exists(mp3_file):
-                            await async_os.remove(mp3_file)
-                        async with aiofiles.open(mp3_file, 'wb') as file:
-                            await file.write(mp3)
-                        await self.loop.run_in_executor(executor, playsound, os.getcwd() + '/tmp.mp3')
-                        await async_os.remove(mp3_file)
-                    else:
-                        # 下载音频失败
-                        is_fail = True
-                        pass
-                except Exception:
-                    # 下载音频失败
-                    is_fail = True
-                    pass
-                finally:
-                    if is_fail:
-                        self.log(f'播放 [{self.sound_control.value}] {text} 失败')
-                    await asyncio.sleep(self.config.play_interval)
+                # url = f"http://233366.proxy.nscc-gz.cn:8888?speaker={self.sound_control.value}&text={text}"
+                # is_fail = False
+                # try:
+                #     response = await client.get(url)
+                #     if response.status_code == 200:
+                #         mp3 = response.content
+                #         if await async_os.path.exists(mp3_file):
+                #             await async_os.remove(mp3_file)
+                #         async with aiofiles.open(mp3_file, 'wb') as file:
+                #             await file.write(mp3)
+                #         # TODO: 播放
+                #         # await self.loop.run_in_executor(executor, playsound, os.getcwd() + '/tmp.mp3')
+                #         await async_os.remove(mp3_file)
+                #     else:
+                #         # 下载音频失败
+                #         is_fail = True
+                #         pass
+                # except Exception:
+                #     # 下载音频失败
+                #     is_fail = True
+                #     pass
+                # finally:
+                #     if is_fail:
+                #         self.log(f'播放 [{self.sound_control.value}] {text} 失败')
+                #     await asyncio.sleep(self.config.play_interval)
 
     async def add_play_task(self, text: str):
         """
@@ -287,6 +325,13 @@ class Controller(Thread):
 
     def sound_changed(self, _):
         self.config.sound = self.sound_control.value
+        voice_local_name = self.sound_control.value
+        voice_name = self.voices[voice_local_name]
+        self.speech_config.speech_synthesis_voice_name = voice_name
+        self.speech_synthesizer = speechsdk.SpeechSynthesizer(
+                                        speech_config=self.speech_config, 
+                                        audio_config=self.audio_config
+                                    )
         self.run_async(self.write_config())
 
     def play_click(self, _):
@@ -372,7 +417,7 @@ def main(page: Page):
                         autofocus=True,
                         on_change=controller.sound_changed,
                         content_padding=padding.only(left=12, right=12),
-                        options=[dropdown.Option(sound_source) for sound_source in sound_sources]
+                        options=[],
                     )
                 ]
             ),
