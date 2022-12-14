@@ -2,8 +2,8 @@
 
 package com.lookupcat.bilibiliannouncer
 
+import BuildConfig
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.desktop.ui.tooling.preview.Preview
@@ -34,23 +34,24 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.*
-import com.goxr3plus.streamplayer.enums.Status.*
-import com.lookupcat.bilibiliannouncer.AuditionStatus.*
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import io.ktor.http.cio.*
-import io.ktor.util.*
-import io.ktor.utils.io.jvm.javaio.*
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import com.lookupcat.bilibiliannouncer.AuditionStatus.LOADING
 import kotlinx.coroutines.*
 import java.awt.Cursor
+import java.awt.Desktop
+import java.net.URI
+import java.util.logging.Level
+import java.util.logging.LogManager
+import java.util.logging.Logger
 
 
 @OptIn(ExperimentalMaterialApi::class)
 fun main() {
+    val logManager = LogManager.getLogManager()
+    logManager.reset()
+    logManager.getLogger(Logger.GLOBAL_LOGGER_NAME).level = Level.OFF
     application {
         val scope = rememberCoroutineScope()
         val viewModel = remember { AppViewModel(scope) }
@@ -73,12 +74,13 @@ fun App(viewModel: AppViewModel, scope: CoroutineScope) {
     var isOpenSetting by remember { mutableStateOf(false) }
     val bottomSheetState = rememberBottomSheetState(BottomSheetValue.Collapsed)
 
-    fun openSetting() {
-        if (!isOpenSetting) {
-            isOpenSetting = true
-            scope.launch { bottomSheetState.expand() }
+    fun openSetting(): Job {
+        return scope.launch {
+            if (!isOpenSetting) {
+                isOpenSetting = true
+                bottomSheetState.expand()
+            }
         }
-
     }
 
     fun closeSetting() {
@@ -117,7 +119,22 @@ fun App(viewModel: AppViewModel, scope: CoroutineScope) {
                         Spacer(modifier = Modifier.padding(top = 20.dp))
                         RoomRow(viewModel)
                         Spacer(modifier = Modifier.padding(top = 20.dp))
-                        VoiceRow(viewModel, bottomSheetScaffoldState, scope)
+                        VoiceRow(
+                            viewModel = viewModel,
+                            bottomSheetScaffoldState = bottomSheetScaffoldState,
+                            scope = scope,
+                            onApiKeyIsEmpty = {
+                                scope.launch {
+                                    openSetting().join()
+                                    bottomSheetScaffoldState
+                                        .snackbarHostState
+                                        .showSnackbar(
+                                            "请输入API Key",
+                                            actionLabel = "好的",
+                                            duration = SnackbarDuration.Short
+                                        )
+                                }
+                            })
                         Spacer(modifier = Modifier.padding(top = 20.dp))
                         PlayButton(
                             viewModel = viewModel,
@@ -134,7 +151,7 @@ fun App(viewModel: AppViewModel, scope: CoroutineScope) {
                             },
                             onApiKeyIsEmpty = {
                                 scope.launch {
-                                    openSetting()
+                                    openSetting().join()
                                     bottomSheetScaffoldState
                                         .snackbarHostState
                                         .showSnackbar(
@@ -210,7 +227,8 @@ fun RoomRow(viewModel: AppViewModel) {
 fun VoiceRow(
     viewModel: AppViewModel,
     bottomSheetScaffoldState: BottomSheetScaffoldState,
-    scope: CoroutineScope
+    scope: CoroutineScope,
+    onApiKeyIsEmpty: () -> Unit,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -221,21 +239,27 @@ fun VoiceRow(
         Box(modifier = Modifier.weight(2f)) {
             OutlinedButton(
                 onClick = {
-                    if (viewModel.started) {
-                        scope.launch {
-                            bottomSheetScaffoldState.snackbarHostState
-                                .showSnackbar(
-                                    "请先点击停止按钮",
-                                    actionLabel = "好的",
-                                    duration = SnackbarDuration.Short
-                                )
+                    when {
+                        viewModel.started -> {
+                            scope.launch {
+                                bottomSheetScaffoldState.snackbarHostState
+                                    .showSnackbar(
+                                        "请先点击停止按钮",
+                                        actionLabel = "好的",
+                                        duration = SnackbarDuration.Short
+                                    )
+                            }
                         }
-                    } else {
-                        scope.launch {
-                            when (viewModel.auditionStatus) {
-                                LOADING -> viewModel.stopAudition()
-                                AuditionStatus.PLAYING -> viewModel.stopAudition()
-                                AuditionStatus.STOPPED -> viewModel.startAudition()
+                        viewModel.config.apiKey.isEmpty() -> {
+                            onApiKeyIsEmpty()
+                        }
+                        else -> {
+                            scope.launch {
+                                when (viewModel.auditionStatus) {
+                                    LOADING -> viewModel.stopAudition()
+                                    AuditionStatus.PLAYING -> viewModel.stopAudition()
+                                    AuditionStatus.STOPPED -> viewModel.startAudition()
+                                }
                             }
                         }
                     }
@@ -281,7 +305,7 @@ fun VoiceRow(
 fun PlayButton(
     viewModel: AppViewModel,
     onRoomIdIsEmpty: () -> Unit,
-    onApiKeyIsEmpty: () -> Unit
+    onApiKeyIsEmpty: () -> Unit,
 ) {
     Button(
         onClick = {
@@ -399,10 +423,41 @@ fun SettingSheet(
         Text("设置", fontSize = 24.sp)
         Divider(modifier = Modifier.padding(vertical = 12.dp))
         ApiKeyRow(viewModel)
-        Spacer(modifier = Modifier.height(20.dp))
-        QueueLength(viewModel)
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+//        QueueLength(viewModel)
+//        Spacer(modifier = Modifier.height(20.dp))
         VolumeRow(viewModel)
+        Spacer(modifier = Modifier.weight(1f))
+        Row(horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()) {
+            Text("版本号: ${BuildConfig.appVersion}",
+                fontSize = 14.sp,
+                color = Color(0xff666666))
+            Spacer(
+                modifier = Modifier
+                    .padding(horizontal = 8.dp)
+                    .width(1.dp)
+                    .height(16.dp)
+                    .background(Color(0xff666666))
+            )
+            Text(
+                "项目地址",
+                fontSize = 14.sp,
+                color = MaterialTheme.colors.primary,
+                modifier = Modifier
+                    .clickable {
+                        if (Desktop.isDesktopSupported()) {
+                            Desktop.getDesktop().browse(URI(BuildConfig.projectUrl))
+                        } else {
+                            error("Desktop only")
+                        }
+                    }
+                    .padding(all = 8.dp)
+                    .pointerHoverIcon(PointerIcon(Cursor(Cursor.HAND_CURSOR)))
+            )
+        }
+        Spacer(modifier = Modifier.padding(bottom = 12.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
@@ -417,6 +472,7 @@ fun SettingSheet(
         }
     }
 }
+
 
 @Composable
 fun QueueLength(viewModel: AppViewModel) {

@@ -92,6 +92,10 @@ class VitsPlayer(
         }
     }
 
+    init {
+        AppFiles.voiceQueue.deleteRecursively()
+    }
+
     suspend fun addPlayTask(task: PlayTask): Job {
         streamPlayerMutex.withLock {
             val job = scope.launch {
@@ -130,7 +134,7 @@ class VitsPlayer(
             playJobs[task] = job
             job.invokeOnCompletion {
                 if (it != null) {
-                    logger.warning("play task error: ${task.description}", it)
+                    logger.error("play task error: ${task.description}", it)
                 }
                 playJobs.remove(task)
                 val safeListener = task.listener.safe()
@@ -143,8 +147,8 @@ class VitsPlayer(
     }
 
 
-    suspend fun cancelAll() {
-        streamPlayerMutex.withLock {
+    fun cancelAll() {
+        scope.launch {
             playJobs.values.forEach {
                 it.cancel()
             }
@@ -168,13 +172,13 @@ class VitsPlayer(
         try {
             streamPlayer.playUntilCompleted(playerGain, file)
         } catch (ex: HttpRequestTimeoutException) {
-            logger.warning("request timeout ${task.description}",ex)
+            logger.error("request timeout ${task.description}",ex)
             safeConsole("语音生成超时 ${task.description}")
         } catch (ex: CancellationException) {
-            logger.warning("cancel play ${task.description}", ex)
+            logger.error("cancel play ${task.description}", ex)
             safeConsole("取消播放 ${task.description}")
         } catch (ex: Exception) {
-            logger.warning("play error ${task.description}", ex)
+            logger.error("play error ${task.description}", ex)
             safeConsole("播放失败 ${task.description}")
         } finally {
             if (!task.cache) {
@@ -207,23 +211,31 @@ class VitsPlayer(
             parameter("code", apiKey)
         }
 
-        if (response.status != HttpStatusCode.OK) {
-            safeConsole("语音生成失败 ${task.description}")
-            error("download error, status code: ${response.status}")
-        }
-        val filename = UUID.randomUUID().toString()
-        val downloadFile = if (cache) {
-            getVoiceCacheFile(voice, actualMsg)
-        } else {
-            var tmpFile = AppFiles.voiceQueue / filename
-            while (tmpFile.exists()) {
-                tmpFile = AppFiles.voiceQueue / filename
+        when (response.status) {
+            HttpStatusCode.Unauthorized -> {
+                safeConsole("语音生成失败, apiKey无效或过期")
+                error("download error, apiKey invalid")
             }
-            tmpFile
+            HttpStatusCode.OK -> {
+                val filename = UUID.randomUUID().toString()
+                val downloadFile = if (cache) {
+                    getVoiceCacheFile(voice, actualMsg)
+                } else {
+                    var tmpFile = AppFiles.voiceQueue / filename
+                    while (tmpFile.exists()) {
+                        tmpFile = AppFiles.voiceQueue / filename
+                    }
+                    tmpFile
+                }
+                downloadFile.parentFile.mkdirs()
+                response.bodyAsChannel().copyTo(downloadFile.writeChannel())
+                return downloadFile
+            }
+            else -> {
+                safeConsole("语音生成失败 ${task.description}")
+                error("download error, status code: ${response.status}")
+            }
         }
-        downloadFile.parentFile.mkdirs()
-        response.bodyAsChannel().copyTo(downloadFile.writeChannel())
-        return downloadFile
     }
 
     private fun getVoiceCacheFile(voice: VoiceInfo, msg: String): File {

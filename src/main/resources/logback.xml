@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration debug="false">
+    <statusListener class="ch.qos.logback.core.status.NopStatusListener"/>
+    <!-- 彩色渲染   -->
+    <conversionRule conversionWord="color" converterClass="com.lookupcat.bilibiliannouncer.ColorLog"/>
+    <property name="CONSOLE_ENCODER"
+              value="%color(%date{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{15.5t} %msg%n)"/>
+    <!--文件输出格式化-->
+    <property name="FILE_ENCODER" value="%date{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{15.5t} %msg%n"/>
+    <!-- 控制台输出 -->
+    <appender name="DEBUG_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>TRACE</level> <!-- 日志过滤级别 -->
+        </filter>
+        <encoder>
+            <pattern>${CONSOLE_ENCODER}</pattern><!-- 格式化输出 -->
+            <charset>utf8</charset> <!-- 输出编码 -->
+        </encoder>
+    </appender>
+    <appender name="INFO_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level> <!-- 日志过滤级别 -->
+        </filter>
+        <encoder>
+            <pattern>${CONSOLE_ENCODER}</pattern><!-- 格式化输出 -->
+            <charset>utf8</charset> <!-- 输出编码 -->
+        </encoder>
+    </appender>
+
+    <!-- info日志文件输出 -->
+    <appender name="INFO_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <encoder>
+            <pattern>${FILE_ENCODER}</pattern><!-- 格式化输出 -->
+            <charset>utf8</charset> <!-- 输出编码 -->
+        </encoder>
+        <file>log/info.log</file><!-- 文件存放路径 -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level> <!-- 日志过滤级别 -->
+        </filter>
+        <!-- 每天归档 -->
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>log/info/%d{yyyy-MM,aux}/%d.%i.log.gz</fileNamePattern>
+            <maxHistory>7</maxHistory><!-- 日志存放周期（天） -->
+            <!-- 日志压缩 -->
+            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <maxFileSize>48MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+        </rollingPolicy>
+    </appender>
+
+    <!-- error日志文件输出 -->
+    <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <encoder>
+            <pattern>${FILE_ENCODER}</pattern><!-- 格式化输出 -->
+            <charset>utf8</charset> <!-- 输出编码 -->
+        </encoder>
+        <file>log/error.log</file><!-- 文件存放路径 -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>WARN</level> <!-- 日志过滤级别 -->
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>log/error/%d{yyyy-MM,aux}/%d.%i.log.gz</fileNamePattern>
+            <maxHistory>7</maxHistory><!-- 日志存放周期（天） -->
+            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <maxFileSize>48MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+        </rollingPolicy>
+    </appender>
+
+    <!-- 全局配置 -->
+    <root level="INFO">
+        <appender-ref ref="INFO_FILE"/>
+        <appender-ref ref="ERROR_FILE"/>
+        <appender-ref ref="DEBUG_CONSOLE"/>
+    </root>
+</configuration>

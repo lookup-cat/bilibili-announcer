@@ -16,7 +16,7 @@ import moe.sdl.yabapi.connect.onCommandResponse
 import moe.sdl.yabapi.data.GeneralCode
 import moe.sdl.yabapi.data.live.LiveResponseCode
 import moe.sdl.yabapi.data.live.commands.LiveInteractGameCmd
-import java.util.logging.Logger
+import java.util.regex.Pattern
 
 /**
  * 试听状态
@@ -29,10 +29,10 @@ enum class AuditionStatus {
 
 
 class AppViewModel(
-    private val uiScope: CoroutineScope
+    private val uiScope: CoroutineScope,
 ) {
 
-    val logger: Logger = logger()
+    val logger = logger()
 
     val voices = listOf(
         VoiceInfo(0, "派蒙"),
@@ -134,45 +134,54 @@ class AppViewModel(
                 console("开始获取房间号")
                 val info = biliClient.getRoomInfoByRoomId(roomId)
                 val infoData = info.data
-                if (info.code == GeneralCode.SUCCESS && infoData != null) {
-                    console("获取房间号成功")
-                    console("开始获取直播间信息")
-                    val actualRoomId = infoData.roomId
-                    val danmaku = biliClient.getLiveDanmakuInfo(actualRoomId)
-                    console("获取直播间信息成功")
-                    console("开始连接直播间")
-                    val danmakuData = danmaku.data
-                    if (danmaku.code == LiveResponseCode.SUCCESS && danmakuData != null) {
-                        biliClient.createLiveDanmakuConnection(
-                            0L,
-                            actualRoomId,
-                            danmakuData.token!!,
-                            danmakuData.hostList.random(),
-                        ) {
-                            onCertificateResponse {
-                                it.collect {
-                                    console("连接直播间成功")
-                                }
-                            }
-                            onCommandResponse {
-                                it.collect { command ->
-                                    if (started && command is LiveInteractGameCmd) {
-                                        command.data?.msg?.let { msg ->
-                                            val task = PlayTask(voice, msg, false)
-                                            logger.info("add task: $task")
-                                            player.addPlayTask(task)
-                                        }
-                                    }
-                                }
-                            }
-                        }.join()
-                    }
-                } else {
+                if (info.code != GeneralCode.SUCCESS || infoData == null) {
                     console("获取房间号失败")
+                    return@launch
                 }
+                console("获取房间号成功")
+                console("开始获取直播间信息")
+                val actualRoomId = infoData.roomId
+                val danmaku = biliClient.getLiveDanmakuInfo(actualRoomId)
+                console("获取直播间信息成功")
+                console("开始连接直播间")
+                val danmakuData = danmaku.data
+                if (danmaku.code != LiveResponseCode.SUCCESS || danmakuData == null) {
+                    console("连接直播间失败")
+                    return@launch
+                }
+                biliClient.createLiveDanmakuConnection(
+                    0L,
+                    actualRoomId,
+                    danmakuData.token!!,
+                    danmakuData.hostList.random(),
+                ) {
+                    onCertificateResponse {
+                        it.collect {
+                            console("连接直播间成功")
+                        }
+                    }
+                    onCommandResponse {
+                        val pattern = Pattern.compile("[\u4e00-\u9fa5]")
+                        it.collect { command ->
+                            if (started && command is LiveInteractGameCmd) {
+                                command.data?.msg?.let { msg ->
+                                    val task = PlayTask(voice, msg, false)
+                                    // 必须包含中文
+                                    if (!pattern.matcher(msg).find()) {
+                                        console("过滤弹幕 ${task.description}")
+                                        return@collect
+                                    }
+                                    logger.info("add task: $task")
+                                    player.addPlayTask(task)
+                                }
+                            }
+                        }
+                    }
+                }.join()
             } catch (e: Exception) {
-                console("关闭连接")
+                logger.error(e.message, e)
             } finally {
+                console("关闭连接")
                 started = false
             }
         }
@@ -180,12 +189,13 @@ class AppViewModel(
 
     fun stop() {
         liveJob?.cancel()
+        player.cancelAll()
     }
 
     private fun console(msg: String) {
         uiScope.launch {
             consoleLogger.add(msg)
-            if (consoleLogger.size  > maxConsoleLogLine) {
+            if (consoleLogger.size > maxConsoleLogLine) {
                 consoleLogger.removeFirst()
             }
             delay(100)
