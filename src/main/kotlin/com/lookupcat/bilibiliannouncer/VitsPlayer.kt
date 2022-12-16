@@ -11,8 +11,8 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.util.cio.*
 import io.ktor.utils.io.*
-import io.ktor.utils.io.CancellationException
 import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -134,7 +134,20 @@ class VitsPlayer(
             playJobs[task] = job
             job.invokeOnCompletion {
                 if (it != null) {
-                    logger.error("play task error: ${task.description}", it)
+                    when (it) {
+                        is HttpRequestTimeoutException -> {
+                            logger.error("request timeout ${task.description}", it)
+                            safeConsole("语音生成超时 ${task.description}")
+                        }
+                        is CancellationException -> {
+                            logger.error("cancel play ${task.description}", it)
+                            safeConsole("取消播放 ${task.description}")
+                        }
+                        else -> {
+                            logger.error("play error ${task.description}", it)
+                            safeConsole("播放失败 ${task.description}")
+                        }
+                    }
                 }
                 playJobs.remove(task)
                 val safeListener = task.listener.safe()
@@ -171,15 +184,6 @@ class VitsPlayer(
     ) {
         try {
             streamPlayer.playUntilCompleted(playerGain, file)
-        } catch (ex: HttpRequestTimeoutException) {
-            logger.error("request timeout ${task.description}",ex)
-            safeConsole("语音生成超时 ${task.description}")
-        } catch (ex: CancellationException) {
-            logger.error("cancel play ${task.description}", ex)
-            safeConsole("取消播放 ${task.description}")
-        } catch (ex: Exception) {
-            logger.error("play error ${task.description}", ex)
-            safeConsole("播放失败 ${task.description}")
         } finally {
             if (!task.cache) {
                 file.delete()

@@ -1,8 +1,7 @@
-@file:Suppress("FunctionName")
+@file:Suppress("FunctionName", "JAVA_MODULE_DOES_NOT_EXPORT_PACKAGE")
 
 package com.lookupcat.bilibiliannouncer
 
-import BuildConfig
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -379,8 +378,13 @@ fun VoicesSpinner(viewModel: AppViewModel, modifier: Modifier) {
                 viewModel.voices.forEach { voice ->
                     DropdownMenuItem(onClick = {
                         expanded = false
-                        viewModel.voice = voice
-                        viewModel.config.voiceId = voice.id
+                        if (viewModel.voice != voice) {
+                            viewModel.voice = voice
+                            viewModel.config.voiceId = voice.id
+                            if (viewModel.started) {
+                                viewModel.console("设置音源【${voice.name}】成功，生效时间可能存在延迟")
+                            }
+                        }
                     }) {
                         Text(text = voice.name)
                     }
@@ -402,7 +406,7 @@ fun ConsoleLogger(viewModel: AppViewModel) {
         state = viewModel.consoleState,
     ) {
         items(items = viewModel.consoleLogger) {
-            Text(it)
+            Text(it, fontSize = 14.sp, modifier = Modifier.padding(top = 2.dp), color = Color(0xff4f4f4f))
         }
     }
 }

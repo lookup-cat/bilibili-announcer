@@ -1,10 +1,14 @@
 
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.util.capitalizeDecapitalize.toUpperCaseAsciiOnly
+import java.util.*
 
 val appVersion = "2.0.0"
 val appName = "bilibili-announcer"
 val projectUrl = "https://github.com/lookup-cat/bilibili-announcer"
+val isDebug = gradle.startParameter.taskNames.none { it.contains("release", ignoreCase = true) }
+val versionUuid = UUID.nameUUIDFromBytes(appVersion.toByteArray()).toString().toUpperCaseAsciiOnly()
 
 plugins {
     kotlin("jvm") version "1.7.20"
@@ -42,27 +46,31 @@ compose.desktop {
     application {
         mainClass = "com.lookupcat.bilibiliannouncer.MainKt"
         nativeDistributions {
+            modules("java.instrument", "java.management", "java.naming", "jdk.unsupported")
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = appName
             packageVersion = appVersion
+            jvmArgs += listOf("-Xmx256M")
             val resources = project.file("src/main/resources")
             windows {
                 macOS {
                     iconFile.set(resources.resolve("icon.icns"))
+                    bundleID = "com.lookupcat.bilibiliannouncer"
                 }
                 windows {
                     iconFile.set(resources.resolve("icon.ico"))
                     shortcut = true
                     menu = true
+                    // see https://wixtoolset.org/documentation/manual/v3/howtos/general/generate_guids.html
+                    upgradeUuid = versionUuid
                 }
                 linux {
                     iconFile.set(resources.resolve("icon.png"))
                 }
             }
         }
-        // 当前compose版本启用proguard存在一些未知问题: https://github.com/JetBrains/compose-jb/issues/2393
         buildTypes.release.proguard {
-            isEnabled.set(false)
+            configurationFiles.from("proguard-rules.pro")
         }
     }
 }
@@ -73,15 +81,17 @@ kotlin {
     }
 }
 
+
 tasks.register<GenerateBuildConfig>("generateBuildConfig") {
     generatedOutputDir.set(project.layout.buildDirectory.dir("generated/com/lookupcat/bilibiliannouncer"))
-    classFqName.set("BuildConfig")
+    classFqName.set("com.lookupcat.bilibiliannouncer.BuildConfig")
     fieldsToGenerate.put("appVersion", appVersion)
+    fieldsToGenerate.put("isDebug", isDebug)
     fieldsToGenerate.put("appName", appName)
     fieldsToGenerate.put("projectUrl", projectUrl)
 }
 
-tasks.findByName("build")?.dependsOn("generateBuildConfig")
+tasks["compileKotlin"].dependsOn("generateBuildConfig")
 
 open class GenerateBuildConfig : DefaultTask() {
     @get:Input

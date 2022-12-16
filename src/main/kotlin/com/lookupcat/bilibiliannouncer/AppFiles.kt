@@ -1,11 +1,20 @@
 package com.lookupcat.bilibiliannouncer
 
+import org.jetbrains.skiko.hostOs
 import java.io.File
 import kotlin.reflect.KProperty
 
 object AppFiles {
 
-    val data: File by directory("data")
+    val appDir by lazy {
+        val dir = when  {
+            !BuildConfig.isDebug && hostOs.isWindows -> File(System.getenv("LOCALAPPDATA"), "bilibili-announcer")
+            else -> File(System.getProperty("user.dir"))
+        }
+        dir.mkdirs()
+        dir
+    }
+    val data: File by directory(appDir,"data")
     val voiceCache: File by directory(data, "voiceCache")
     val voiceQueue: File by directory(data, "voiceQueue")
     val config: File = data / "config.json"

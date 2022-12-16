@@ -192,7 +192,7 @@ class AppViewModel(
         player.cancelAll()
     }
 
-    private fun console(msg: String) {
+    fun console(msg: String) {
         uiScope.launch {
             consoleLogger.add(msg)
             if (consoleLogger.size > maxConsoleLogLine) {
@@ -241,19 +241,5 @@ class AppViewModel(
         }
     }
 
-//    inline fun updateConfig(updater: (config: Config) -> Config) {
-//        val (config, setter) = this.configState
-//        val newConfig = updater(config)
-//        setter(newConfig)
-//        this.saveJob?.cancel()
-//        this.saveJob = ioScope.launch {
-//            try {
-//                delay(1000)
-//            } catch (ex: CancellationException) {
-//                return@launch
-//            }
-//            ConfigStorage.save(config)
-//        }
-//    }
 }
 
