@@ -15,7 +15,7 @@ import moe.sdl.yabapi.connect.onCertificateResponse
 import moe.sdl.yabapi.connect.onCommandResponse
 import moe.sdl.yabapi.data.GeneralCode
 import moe.sdl.yabapi.data.live.LiveResponseCode
-import moe.sdl.yabapi.data.live.commands.LiveInteractGameCmd
+import moe.sdl.yabapi.data.live.commands.DanmakuMsgCmd
 import java.util.regex.Pattern
 
 /**
@@ -138,17 +138,16 @@ class AppViewModel(
                     console("获取房间号失败")
                     return@launch
                 }
-                console("获取房间号成功")
                 console("开始获取直播间信息")
                 val actualRoomId = infoData.roomId
                 val danmaku = biliClient.getLiveDanmakuInfo(actualRoomId)
-                console("获取直播间信息成功")
-                console("开始连接直播间")
                 val danmakuData = danmaku.data
-                if (danmaku.code != LiveResponseCode.SUCCESS || danmakuData == null) {
-                    console("连接直播间失败")
+                if (danmaku.code != LiveResponseCode.SUCCESS ||  danmakuData == null) {
+                    console("获取直播间信息失败")
                     return@launch
                 }
+                console("标题: ${infoData.title}")
+                console("开始连接直播间")
                 biliClient.createLiveDanmakuConnection(
                     0L,
                     actualRoomId,
@@ -163,17 +162,25 @@ class AppViewModel(
                     onCommandResponse {
                         val pattern = Pattern.compile("[\u4e00-\u9fa5]")
                         it.collect { command ->
-                            if (started && command is LiveInteractGameCmd) {
-                                command.data?.msg?.let { msg ->
+                            if (command is DanmakuMsgCmd) {
+                                command.data?.content?.let { msg ->
                                     val task = PlayTask(voice, msg, false)
-                                    // 必须包含中文
-                                    if (!pattern.matcher(msg).find()) {
+                                    // 必须包含中文2字以上
+                                    val matcher = pattern.matcher(msg)
+                                    val result = buildString {
+                                        while(matcher.find()) {
+                                            append(matcher.group())
+                                        }
+                                    }
+                                    if (result.chars().distinct().count() < 2) {
                                         console("过滤弹幕 ${task.description}")
                                         return@collect
                                     }
                                     logger.info("add task: $task")
                                     player.addPlayTask(task)
                                 }
+                            } else {
+                                logger.info("command: $command")
                             }
                         }
                     }
