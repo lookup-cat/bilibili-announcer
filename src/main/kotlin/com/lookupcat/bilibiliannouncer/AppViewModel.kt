@@ -124,7 +124,6 @@ class AppViewModel(
         }
         snapshotFlow { config.volume }.onEach { player.playerGain = it * 2.0 }.launchIn(uiScope)
         snapshotFlow { config.queueLength }.onEach { player.maxQueueLength = it }.launchIn(uiScope)
-        snapshotFlow { config.apiKey }.onEach { player.apiKey = it }.launchIn(uiScope)
     }
 
     fun start(roomId: Long) {

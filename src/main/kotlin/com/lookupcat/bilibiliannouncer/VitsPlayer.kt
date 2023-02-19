@@ -45,8 +45,6 @@ class VitsPlayer(
     private val uiScope: CoroutineScope
 ) {
 
-    var apiKey: String = ""
-
     // 音量 0.0 ~ 2.0
     var playerGain: Double = 1.0
         set(value) {
@@ -206,19 +204,17 @@ class VitsPlayer(
                 return file
             }
         }
-        val url = "https://genshin.azurewebsites.net/api/speak"
+        val url = "https://yuanshenai.azurewebsites.net/api"
         val response = httpClient.get {
             url(url)
-            parameter("format", "mp3")
             parameter("text", actualMsg)
-            parameter("id", voice.id)
-            parameter("code", apiKey)
+            parameter("speaker", voice.name)
         }
 
         when (response.status) {
             HttpStatusCode.Unauthorized -> {
-                safeConsole("语音生成失败, apiKey无效或过期")
-                error("download error, apiKey invalid")
+                safeConsole("语音生成失败")
+                error("download error")
             }
             HttpStatusCode.OK -> {
                 val filename = UUID.randomUUID().toString()

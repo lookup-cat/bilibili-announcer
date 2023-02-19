@@ -49,11 +49,6 @@ object ConfigStorage {
 @Serializable
 data class Config(
     /**
-     * 原神vits apiKey
-     */
-    val apiKey: String = "",
-
-    /**
      * 音量配置 范围 0.0 ~ 1.0
      */
     val volume: Float = 0.5f,
@@ -75,20 +70,17 @@ data class Config(
 )
 
 class ConfigState(
-    apiKey: String,
     volume: Float,
     queueLength: Int,
     voiceId: Int,
     roomId: Long?,
 ) {
-    var apiKey by mutableStateOf(apiKey)
     var volume by mutableStateOf(volume)
     var voiceId by mutableStateOf(voiceId)
     var queueLength: Int by mutableStateOf(queueLength)
     var roomId: Long? by mutableStateOf(roomId)
 
     fun observe(scope: CoroutineScope, block: (ConfigState) -> Unit) {
-        snapshotFlow { apiKey }.onEach { block(this) }.launchIn(scope)
         snapshotFlow { volume }.onEach { block(this) }.launchIn(scope)
         snapshotFlow { queueLength }.onEach { block(this) }.launchIn(scope)
         snapshotFlow { voiceId }.onEach { block(this) }.launchIn(scope)
@@ -97,7 +89,6 @@ class ConfigState(
 }
 
 fun ConfigState.toConfig() = Config(
-    apiKey = apiKey,
     volume = volume,
     queueLength = queueLength,
     voiceId = voiceId,
@@ -105,7 +96,6 @@ fun ConfigState.toConfig() = Config(
 )
 
 fun Config.toState() = ConfigState(
-    apiKey = apiKey,
     volume = volume,
     queueLength = queueLength,
     voiceId = voiceId,

@@ -28,7 +28,7 @@ repositories {
 
 dependencies {
     implementation(compose.desktop.currentOs)
-    implementation("moe.sdl.yabapi:yabapi-core-jvm:0.11.1")
+    implementation("moe.sdl.yabapi:yabapi-core-jvm:0.11.2")
     implementation("io.ktor:ktor-client-cio-jvm:2.1.2")
     implementation("com.github.goxr3plus:java-stream-player:10.0.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.4.1")

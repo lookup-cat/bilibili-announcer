@@ -121,19 +121,7 @@ fun App(viewModel: AppViewModel, scope: CoroutineScope) {
                         VoiceRow(
                             viewModel = viewModel,
                             bottomSheetScaffoldState = bottomSheetScaffoldState,
-                            scope = scope,
-                            onApiKeyIsEmpty = {
-                                scope.launch {
-                                    openSetting().join()
-                                    bottomSheetScaffoldState
-                                        .snackbarHostState
-                                        .showSnackbar(
-                                            "请输入API Key",
-                                            actionLabel = "好的",
-                                            duration = SnackbarDuration.Short
-                                        )
-                                }
-                            })
+                            scope = scope)
                         Spacer(modifier = Modifier.padding(top = 20.dp))
                         PlayButton(
                             viewModel = viewModel,
@@ -148,18 +136,6 @@ fun App(viewModel: AppViewModel, scope: CoroutineScope) {
                                         )
                                 }
                             },
-                            onApiKeyIsEmpty = {
-                                scope.launch {
-                                    openSetting().join()
-                                    bottomSheetScaffoldState
-                                        .snackbarHostState
-                                        .showSnackbar(
-                                            "请输入API Key",
-                                            actionLabel = "好的",
-                                            duration = SnackbarDuration.Short
-                                        )
-                                }
-                            }
                         )
                         Button(
                             onClick = {
@@ -200,16 +176,6 @@ fun App(viewModel: AppViewModel, scope: CoroutineScope) {
 }
 
 @Composable
-fun ApiKeyRow(viewModel: AppViewModel) {
-    OutlinedTextField(
-        viewModel.config.apiKey,
-        label = { Text("API Key") },
-        maxLines = 1,
-        modifier = Modifier.fillMaxWidth(),
-        onValueChange = { viewModel.config.apiKey = it })
-}
-
-@Composable
 fun RoomRow(viewModel: AppViewModel) {
     OutlinedTextField(
         viewModel.config.roomId?.toString() ?: "",
@@ -227,7 +193,6 @@ fun VoiceRow(
     viewModel: AppViewModel,
     bottomSheetScaffoldState: BottomSheetScaffoldState,
     scope: CoroutineScope,
-    onApiKeyIsEmpty: () -> Unit,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -248,9 +213,6 @@ fun VoiceRow(
                                         duration = SnackbarDuration.Short
                                     )
                             }
-                        }
-                        viewModel.config.apiKey.isEmpty() -> {
-                            onApiKeyIsEmpty()
                         }
                         else -> {
                             scope.launch {
@@ -304,7 +266,6 @@ fun VoiceRow(
 fun PlayButton(
     viewModel: AppViewModel,
     onRoomIdIsEmpty: () -> Unit,
-    onApiKeyIsEmpty: () -> Unit,
 ) {
     Button(
         onClick = {
@@ -312,10 +273,8 @@ fun PlayButton(
                 viewModel.stop()
             } else {
                 val roomId = viewModel.config.roomId
-                val apiKey = viewModel.config.apiKey
                 when {
                     roomId == null -> onRoomIdIsEmpty()
-                    apiKey.isEmpty() -> onApiKeyIsEmpty()
                     else -> viewModel.start(roomId)
                 }
             }
@@ -425,8 +384,6 @@ fun SettingSheet(
             .padding(16.dp)
     ) {
         Text("设置", fontSize = 24.sp)
-        Divider(modifier = Modifier.padding(vertical = 12.dp))
-        ApiKeyRow(viewModel)
         Spacer(modifier = Modifier.height(12.dp))
 //        QueueLength(viewModel)
 //        Spacer(modifier = Modifier.height(20.dp))
