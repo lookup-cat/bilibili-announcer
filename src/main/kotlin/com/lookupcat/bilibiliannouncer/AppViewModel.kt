@@ -34,63 +34,10 @@ class AppViewModel(
 
   val logger = logger()
 
-  val voices = listOf(
-    VoiceInfo(0, "派蒙"),
-    VoiceInfo(1, "凯亚"),
-    VoiceInfo(2, "安柏"),
-    VoiceInfo(3, "丽莎"),
-    VoiceInfo(4, "琴"),
-    VoiceInfo(5, "香菱"),
-    VoiceInfo(6, "枫原万叶"),
-    VoiceInfo(7, "迪卢克"),
-    VoiceInfo(8, "温迪"),
-    VoiceInfo(9, "可莉"),
-    VoiceInfo(10, "早柚"),
-    VoiceInfo(11, "托马"),
-    VoiceInfo(12, "芭芭拉"),
-    VoiceInfo(13, "优菈"),
-    VoiceInfo(14, "云堇"),
-    VoiceInfo(15, "钟离"),
-    VoiceInfo(16, "魈"),
-    VoiceInfo(17, "凝光"),
-    VoiceInfo(18, "雷电将军"),
-    VoiceInfo(19, "北斗"),
-    VoiceInfo(20, "甘雨"),
-    VoiceInfo(21, "七七"),
-    VoiceInfo(22, "刻晴"),
-    VoiceInfo(23, "神里绫华"),
-    VoiceInfo(24, "戴因斯雷布"),
-    VoiceInfo(25, "雷泽"),
-    VoiceInfo(26, "神里绫人"),
-    VoiceInfo(27, "罗莎莉亚"),
-    VoiceInfo(28, "阿贝多"),
-    VoiceInfo(29, "八重神子"),
-    VoiceInfo(30, "宵宫"),
-    VoiceInfo(31, "荒泷一斗"),
-    VoiceInfo(32, "九条裟罗"),
-    VoiceInfo(33, "夜兰"),
-    VoiceInfo(34, "珊瑚宫心海"),
-    VoiceInfo(35, "五郎"),
-    VoiceInfo(36, "散兵"),
-    VoiceInfo(37, "女士"),
-    VoiceInfo(38, "达达利亚"),
-    VoiceInfo(39, "莫娜"),
-    VoiceInfo(40, "班尼特"),
-    VoiceInfo(41, "申鹤"),
-    VoiceInfo(42, "行秋"),
-    VoiceInfo(43, "烟绯"),
-    VoiceInfo(44, "久岐忍"),
-    VoiceInfo(45, "辛焱"),
-    VoiceInfo(46, "砂糖"),
-    VoiceInfo(47, "胡桃"),
-    VoiceInfo(48, "重云"),
-    VoiceInfo(49, "菲谢尔"),
-    VoiceInfo(50, "诺艾尔"),
-    VoiceInfo(51, "迪奥娜"),
-    VoiceInfo(52, "鹿野院平藏"),
-  )
-  var voice by mutableStateOf(voices.first())
+  var voice by mutableStateOf(VoiceInfo(0, ""))
+  val voices = mutableListOf<VoiceInfo>()
   var started by mutableStateOf(false)
+  var tryReconnect: Boolean = false
   val consoleLogger = mutableStateListOf<String>()
   val maxConsoleLogLine = 200
   var consoleState = LazyListState()
@@ -122,12 +69,22 @@ class AppViewModel(
         ConfigStorage.save(it.toConfig())
       }
     }
+    // read voice
+    AppViewModel::class.java.classLoader.getResourceAsStream("voice.txt")?.use {
+      it.bufferedReader().readLines().forEachIndexed { index, s ->
+        voices.add(VoiceInfo(index, s))
+      }
+      voice = voices.first()
+      logger.info("音源数量:{}", voices.size)
+    }
+
     snapshotFlow { config.volume }.onEach { player.playerGain = it * 2.0 }.launchIn(uiScope)
     snapshotFlow { config.queueLength }.onEach { player.maxQueueLength = it }.launchIn(uiScope)
   }
 
   fun start(roomId: Long) {
     this.started = true
+    this.tryReconnect = true
     liveJob = ioScope.launch {
       try {
         console("开始获取房间号")
@@ -179,21 +136,31 @@ class AppViewModel(
                   player.addPlayTask(task)
                 }
               } else {
-                logger.info("command: $command")
+                logger.debug("command: $command")
               }
             }
           }
         }.join()
       } catch (e: Exception) {
+        console("error:${e.message}")
         logger.error(e.message, e)
       } finally {
-        console("关闭连接")
         started = false
+        if (tryReconnect) {
+          ioScope.launch {
+            console("直播间连接异常 500ms后重新连接")
+            delay(500)
+            start(roomId)
+          }
+        } else {
+          console("直播间连接关闭")
+        }
       }
     }
   }
 
   fun stop() {
+    tryReconnect = false
     liveJob?.cancel()
     player.cancelAll()
   }
@@ -214,7 +181,7 @@ class AppViewModel(
    */
   fun startAudition() {
     uiScope.launch {
-      val task = PlayTask(voice, "旅行者你好, 我叫${voice.name}", true) {
+      val task = PlayTask(voice, "旅行者你好, 我是派蒙弹幕姬", true) {
         when (it) {
           PlayTextStatus.DOWNLOADING -> {
             auditionStatus = AuditionStatus.LOADING

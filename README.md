@@ -13,19 +13,19 @@
 * [x] 调节音量
 * [ ] 自定义配置弹幕过滤功能
 
-## 已知问题
+## 依赖
 
-由于上游语音合成API的问题，偶尔会有合成超时的情况
+语音合成功能依赖于项目：[新版Bert-vits2 v2.0.2原神角色雷电将军音色模型一键推理整合包分享](https://www.bilibili.com/video/BV1WM411Z78E/)
 
 ## 更新日志
 
 ###　2.0.0
 
 - 使用kotlin进行重构，修复了断开直播间不会立即停止语音播放的问题
-- 更新音源api
+- 更新音源为本地化部署方案
 - 支持调整音量
 
 ## 相关项目
 
-- [ZeroBot-Plugin](https://github.com/FloatTech/ZeroBot-Plugin)  基于ZeroBot的OneBot插件　(语音合成API来源于自项目)
+- [新版Bert-vits2 v2.0.2原神角色雷电将军音色模型一键推理整合包分享](https://www.bilibili.com/video/BV1WM411Z78E/) 
 - [Yabapi](https://github.com/SDLMoe/Yabapi) 一个B站第三方 Kotlin API 库

@@ -11,9 +11,9 @@ val isDebug = gradle.startParameter.taskNames.none { it.contains("release", igno
 val versionUuid = UUID.nameUUIDFromBytes(appVersion.toByteArray()).toString().toUpperCaseAsciiOnly()
 
 plugins {
-    kotlin("jvm") version "1.7.20"
-    kotlin("plugin.serialization") version "1.7.20"
-    id("org.jetbrains.compose") version "1.2.1"
+    kotlin("jvm") version "1.9.21"
+    kotlin("plugin.serialization") version "1.9.21"
+    id("org.jetbrains.compose") version "1.5.11"
 }
 
 group = "com.lookupcat.bilibiliannouncer"
@@ -29,11 +29,13 @@ repositories {
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation("moe.sdl.yabapi:yabapi-core-jvm:0.11.2")
-    implementation("io.ktor:ktor-client-cio-jvm:2.1.2")
+    implementation("io.ktor:ktor-client-cio-jvm:2.3.7")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.7")
+    implementation("io.ktor:ktor-client-content-negotiation:2.3.7")
     implementation("com.github.goxr3plus:java-stream-player:10.0.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.4.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
     implementation("org.jetbrains.compose.material:material-icons-extended-desktop:1.2.0")
-    implementation("ch.qos.logback:logback-classic:1.4.5")
+    implementation("ch.qos.logback:logback-classic:1.4.12")
     implementation("org.slf4j:slf4j-api:2.0.5")
     implementation("org.jetbrains.kotlinx:atomicfu:0.18.3")
 }

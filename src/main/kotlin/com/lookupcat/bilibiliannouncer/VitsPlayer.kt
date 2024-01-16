@@ -5,10 +5,13 @@ import com.goxr3plus.streamplayer.stream.StreamPlayer
 import com.goxr3plus.streamplayer.stream.StreamPlayerEvent
 import com.goxr3plus.streamplayer.stream.StreamPlayerListener
 import io.ktor.client.*
+import io.ktor.client.call.*
 import io.ktor.client.plugins.*
+import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import io.ktor.serialization.kotlinx.json.*
 import io.ktor.util.cio.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.*
@@ -17,8 +20,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.io.InputStream
+import java.nio.file.Files
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -87,6 +95,9 @@ class VitsPlayer(
     install(HttpTimeout) {
       requestTimeoutMillis = 30000
       connectTimeoutMillis = 5000
+    }
+    install(ContentNegotiation) {
+      json()
     }
   }
 
@@ -200,17 +211,39 @@ class VitsPlayer(
       error("msg is blank")
     }
     if (cache) {
+      // 获取音频缓存
       val file = getVoiceCacheFile(voice, actualMsg)
       if (file.exists()) {
         safeListener(PlayTextStatus.DOWNLOADED)
         return file
       }
     }
-    val url = "https://yuanshenai.azurewebsites.net/api"
-    val response = httpClient.get {
+    // 下载音频
+    val url = "http://127.0.0.1:7860/run/predict"
+    val start = System.currentTimeMillis()
+    val response = httpClient.post {
       url(url)
-      parameter("text", actualMsg)
-      parameter("speaker", voice.name)
+      setBody("""
+        {
+          "data": [
+            "$actualMsg",
+            "${voice.name}",
+            0.5,
+            0.6,
+            0.9,
+            1,
+            "ZH",
+            null,
+            "Happy",
+            "Text prompt",
+            "",
+            0.7
+          ],
+          "event_data": null,
+          "fn_index": 0
+        }
+      """.trimIndent())
+      contentType(ContentType.parse("application/json"))
     }
 
     when (response.status) {
@@ -220,19 +253,32 @@ class VitsPlayer(
       }
 
       HttpStatusCode.OK -> {
-        val filename = UUID.randomUUID().toString()
-        val downloadFile = if (cache) {
-          getVoiceCacheFile(voice, actualMsg)
-        } else {
-          var tmpFile = AppFiles.voiceQueue / filename
-          while (tmpFile.exists()) {
-            tmpFile = AppFiles.voiceQueue / filename
-          }
-          tmpFile
+        logger.info("[${voice.name}]${actualMsg} 用时:${System.currentTimeMillis()-start}ms")
+        val body = response.body<JsonObject>()
+        val data = body["data"]?.jsonArray
+        if (data == null) {
+          safeConsole("语音生成失败")
+          error("generate error")
         }
-        downloadFile.parentFile.mkdirs()
-        response.bodyAsChannel().copyTo(downloadFile.writeChannel())
-        return downloadFile
+        if (data[0].jsonPrimitive.content != "Success") {
+          safeConsole("语音生成失败")
+          error("generate error")
+        }
+        val filename = data[1].jsonObject["name"]?.jsonPrimitive?.content
+        if (filename == null) {
+          safeConsole("语音生成失败")
+          error("generate error")
+        }
+        val voiceFile = File(filename)
+        if (cache) {
+          // 保存文件到缓存
+          val cacheFile = getVoiceCacheFile(voice, actualMsg)
+          withContext(Dispatchers.IO) {
+            cacheFile.parentFile.mkdirs()
+            Files.copy(voiceFile.toPath(), cacheFile.toPath())
+          }
+        }
+        return voiceFile
       }
 
       else -> {

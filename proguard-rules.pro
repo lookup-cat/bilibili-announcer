@@ -1,5 +1,7 @@
 -dontwarn ch.qos.logback.**
 -keep class ch.qos.logback.** {*;}
+-keep class moe.sdl.yabapi.** {*;}
+-keep class io.ktor.serialization.kotlinx.** {*;}
 -keep class com.lookupcat.bilibiliannouncer.ColorLog {*;}
 
 -dontwarn org.tritonus.midi.device.java.SunMiscPerfClock

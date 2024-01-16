@@ -57,7 +57,7 @@ fun main() {
     Window(
       onCloseRequest = ::exitApplication,
       resizable = false,
-      state = rememberWindowState(size = DpSize(400.dp, 650.dp)),
+      state = rememberWindowState(size = DpSize(450.dp, 650.dp)),
       title = "派蒙弹幕姬",
       icon = painterResource("icon.png")
     ) {
@@ -98,6 +98,7 @@ fun App(viewModel: AppViewModel, scope: CoroutineScope) {
       sheetPeekHeight = 0.dp,
       sheetGesturesEnabled = false,
       sheetElevation = 0.dp,
+      backgroundColor = Color(0xFFFBFBFB),
       sheetBackgroundColor = Color(0x00000000),
       sheetContent = {
         SettingSheet(
@@ -112,8 +113,7 @@ fun App(viewModel: AppViewModel, scope: CoroutineScope) {
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxSize()
-
-              .padding(horizontal = 36.dp)
+              .padding(horizontal = 24.dp)
           ) {
             Spacer(modifier = Modifier.padding(top = 20.dp))
             RoomRow(viewModel)
@@ -121,7 +121,8 @@ fun App(viewModel: AppViewModel, scope: CoroutineScope) {
             VoiceRow(
               viewModel = viewModel,
               bottomSheetScaffoldState = bottomSheetScaffoldState,
-              scope = scope
+              scope = scope,
+              openSetting = { openSetting() }
             )
             Spacer(modifier = Modifier.padding(top = 20.dp))
             PlayButton(
@@ -138,15 +139,15 @@ fun App(viewModel: AppViewModel, scope: CoroutineScope) {
                 }
               },
             )
-            Button(
-              onClick = {
-                openSetting()
-              },
-              modifier = Modifier.pointerHoverIcon(PointerIcon(Cursor(Cursor.HAND_CURSOR)))
-            ) {
-              Icon(imageVector = Icons.Default.Settings, contentDescription = "设置")
-              Text("设置")
-            }
+//            Button(
+//              onClick = {
+//                openSetting()
+//              },
+//              modifier = Modifier.pointerHoverIcon(PointerIcon(Cursor(Cursor.HAND_CURSOR)))
+//            ) {
+//              Icon(imageVector = Icons.Default.Settings, contentDescription = "设置")
+//              Text("设置")
+//            }
             ConsoleLogger(viewModel)
           }
 
@@ -192,72 +193,95 @@ fun VoiceRow(
   viewModel: AppViewModel,
   bottomSheetScaffoldState: BottomSheetScaffoldState,
   scope: CoroutineScope,
+  openSetting: () -> Unit
 ) {
   Row(
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.Center,
+    horizontalArrangement = Arrangement.SpaceBetween,
   ) {
-    Text("音源", modifier = Modifier.weight(2f), textAlign = TextAlign.Center)
-    VoicesSpinner(viewModel, modifier = Modifier.weight(6f))
-    Box(modifier = Modifier.weight(2f)) {
-      OutlinedButton(
-        onClick = {
-          when {
-            viewModel.started -> {
-              scope.launch {
-                bottomSheetScaffoldState.snackbarHostState
-                  .showSnackbar(
-                    "请先点击停止按钮",
-                    actionLabel = "好的",
-                    duration = SnackbarDuration.Short
-                  )
+    Text("音源", textAlign = TextAlign.Center)
+    VoicesSpinner(viewModel, modifier = Modifier.weight(1f))
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+      modifier = Modifier.width(85.dp)
+    )  {
+      Box {
+        OutlinedButton(
+          onClick = {
+            when {
+              viewModel.started -> {
+                scope.launch {
+                  bottomSheetScaffoldState.snackbarHostState
+                    .showSnackbar(
+                      "请先点击停止按钮",
+                      actionLabel = "好的",
+                      duration = SnackbarDuration.Short
+                    )
+                }
               }
-            }
 
-            else -> {
-              scope.launch {
-                when (viewModel.auditionStatus) {
-                  LOADING -> viewModel.stopAudition()
-                  AuditionStatus.PLAYING -> viewModel.stopAudition()
-                  AuditionStatus.STOPPED -> viewModel.startAudition()
+              else -> {
+                scope.launch {
+                  when (viewModel.auditionStatus) {
+                    LOADING -> viewModel.stopAudition()
+                    AuditionStatus.PLAYING -> viewModel.stopAudition()
+                    AuditionStatus.STOPPED -> viewModel.startAudition()
+                  }
                 }
               }
             }
-          }
-        },
-        modifier = Modifier.size(36.dp)
-          .pointerHoverIcon(PointerIcon(Cursor(Cursor.HAND_CURSOR))),
-        shape = CircleShape,
-        contentPadding = PaddingValues(0.dp),
-        colors = ButtonDefaults.outlinedButtonColors(
-          backgroundColor = MaterialTheme.colors.primary,
-          contentColor = Color.White
-        ),
-      ) {
-        when (viewModel.auditionStatus) {
-          LOADING -> CircularProgressIndicator(
-            modifier = Modifier.padding(8.dp),
-            color = Color.White
-          )
+          },
+          modifier = Modifier.size(36.dp)
+            .pointerHoverIcon(PointerIcon(Cursor(Cursor.HAND_CURSOR))),
+          shape = CircleShape,
+          contentPadding = PaddingValues(0.dp),
+          colors = ButtonDefaults.outlinedButtonColors(
+            backgroundColor = MaterialTheme.colors.primary,
+            contentColor = Color.White
+          ),
+        ) {
+          when (viewModel.auditionStatus) {
+            LOADING -> CircularProgressIndicator(
+              modifier = Modifier.padding(8.dp),
+              color = Color.White
+            )
 
-          AuditionStatus.PLAYING -> {
-            val icons =
-              remember { listOf(Icons.Filled.VolumeMute, Icons.Filled.VolumeDown, Icons.Filled.VolumeUp) }
-            var icon by remember { mutableStateOf(icons.first()) }
-            LaunchedEffect(icons) {
-              var index = 0
-              while (isActive) {
-                delay(400)
-                icon = icons[index++ % icons.size]
+            AuditionStatus.PLAYING -> {
+              val icons =
+                remember { listOf(Icons.Filled.VolumeMute, Icons.Filled.VolumeDown, Icons.Filled.VolumeUp) }
+              var icon by remember { mutableStateOf(icons.first()) }
+              LaunchedEffect(icons) {
+                var index = 0
+                while (isActive) {
+                  delay(400)
+                  icon = icons[index++ % icons.size]
+                }
               }
+              Icon(icon, contentDescription = "停止")
             }
-            Icon(icon, contentDescription = "停止")
-          }
 
-          AuditionStatus.STOPPED -> Icon(Icons.Filled.VolumeUp, contentDescription = "播放")
+            AuditionStatus.STOPPED -> Icon(Icons.Filled.VolumeUp, contentDescription = "播放")
+          }
+        }
+      }
+      Box {
+        OutlinedButton(
+          onClick = openSetting,
+          modifier = Modifier.size(36.dp)
+            .pointerHoverIcon(PointerIcon(Cursor(Cursor.HAND_CURSOR))),
+          shape = CircleShape,
+          contentPadding = PaddingValues(0.dp),
+          colors = ButtonDefaults.outlinedButtonColors(
+            backgroundColor = MaterialTheme.colors.primary,
+            contentColor = Color.White
+          ),
+        ) {
+          Icon(Icons.Filled.Settings, contentDescription = "设置")
         }
       }
     }
+
   }
 }
 
@@ -312,7 +336,7 @@ fun VolumeRow(viewModel: AppViewModel) {
 }
 
 @Composable
-fun VoicesSpinner(viewModel: AppViewModel, modifier: Modifier) {
+fun VoicesSpinner(viewModel: AppViewModel, modifier: Modifier = Modifier) {
   var expanded by remember { mutableStateOf(false) }
   Box(contentAlignment = Alignment.Center, modifier = modifier) {
     val shape = RoundedCornerShape(6.dp)
@@ -360,7 +384,7 @@ fun ConsoleLogger(viewModel: AppViewModel) {
     modifier = Modifier
       .padding(vertical = 20.dp)
       .fillMaxSize()
-      .background(Color(0x11000000), RoundedCornerShape(12.dp))
+      .background(Color(0x11000000), RoundedCornerShape(6.dp))
       .padding(8.dp),
     state = viewModel.consoleState,
   ) {
